@@ -1,0 +1,32 @@
+# Kaggle information:
+
+Banks play a crucial role in market economies. They decide who can get finance and on what terms and can make or break investment decisions. For markets and society to function, individuals and companies need access to credit. 
+
+Credit scoring algorithms, which make a guess at the probability of default, are the method banks use to determine whether or not a loan should be granted. This competition requires participants to improve on the state of the art in credit scoring, by predicting the probability that somebody will experience financial distress in the next two years.
+
+The goal of this competition is to build a model that borrowers can use to help make the best financial decisions.
+
+
+
+# Instructions 
+
+Case
+For new loan applications, a financial institution wants to estimate the risk of customers defaulting on a loan and/or being significantly past due on a loan payment in the next two years.
+
+Exercise
+Build a predictive model using the provided dataset and present the results in an html or pdf file created by using RMarkdown/RNotebook
+Clearly explain the problem at hand & key steps taken to solve it
+Explain your choices and possible different routes you could have taken
+Elaborate on the major conclusions in terms of analytics approach and business value
+Try to be visual
+Create a presentation about your findings with the CEO of the client company as your target audience
+Please elaborate on the following: if you were to lead this project from start to finish, how would you manage the project in a successful way?
+
+Data
+The exercise is set up around a Kaggle dataset which you can find here: https://www.kaggle.com/c/GiveMeSomeCredit/data. Only use the cs-training.csv file to build your analysis and model on, ignore the rest. The column SeriousDlqin2yrs holds the target variable.
+
+Deliverables
+.Rmd file
+Technical report HTML or PDF (the output of compiling the Rmd file, max. 5 pages)
+Presentation (max. 10 slides)
+Written explanation on project management aspect (max. 1 page)
