@@ -11,9 +11,13 @@
 
 # Description -------------------------------------------------------------
 
-# This scripts loads, cleans and saves the raw dataset cs-training.csv downloaded from Kaggle 
+# This scripts loads and cleans the raw dataset cs-training.csv downloaded from Kaggle
 
-# Load libraries and functions
+# 
+
+
+
+# Load libraries and functions -------------------------------------------------------------
 
 source("Code/etl_functions.R")
 
@@ -37,7 +41,7 @@ sapply(df.training,class)
 summary(df.training)
 
 # Further column information
-df.description<- data.frame("ColName"=names(df.training),"ColType"= {sapply(df.training,class) %>% unname()},"NumUnique"={sapply(df.training,numUnique)%>% unname()}, "NAs"= {sapply(df.training,numNAs) %>% unname()},"PropNAs"= {sapply(df.training,propNAs) %>% unname()})
+df.description<- data.frame("ColName"=names(df.training),"ColType"= {sapply(df.training,class) %>% unname()},"NumUnique"={sapply(df.training,numUnique)%>% unname()}, "NAs"= {sapply(df.training,numNAs) %>% unname()},"PropNAs"= {sapply(df.training,propNAs) %>% unname()},"NumOutliers"= {sapply(df.training,numOutliers)})
 
 # There are many NAs in Monthly Income and NumberOfDependents
 # 1st attempt - drop these values
@@ -67,16 +71,51 @@ for(i in colnames(df.training)[-1]){
   print(p)
 }
 
-# Simple loop for histograms / frequency polygons
+
+# Simple loop for histograms / frequency polygons  - split 
 for(i in colnames(df.training)[-1]){
   
   p<- ggplot(data=df.training, aes(x=df.training[paste(i)], colour = SeriousDlqin2yrs)) + geom_freqpoly(aes(y=..density..)) +xlab(paste(i)) 
   print(p)
 }
 
-# The plot for age shows an over-population over younger clients that default 
-# The plot for number of dependents shows an over-population in clients that default with fewer dependents
-# NumberOfTime60-89DaysPastDueNotWorse -> under-population at high end
-# defaults have proportionally fewer real-esate loans 
-# NumberOfTimes90DaysLate - > slight over-population at higher end
+# Age -> shows an over-population over younger clients that default 
+# Number of dependents ->  shows an over-population in clients that default with fewer dependents
+# NumberOfTime60-89DaysPastDueNotWorse -> Over-population at high end? Could the large values here be a default code and not a number? 
+
+
+
+# Real-esate loans -> defaults have proportionally fewer 
+# NumberOfTimes90DaysLate - > slight over-population at higher end? Could the large values here be a default code and not a number? 
 # NumberOfOpenCreditLinesAndLoans -> slight over-population at lower end
+# Monthly Income -> shows no difference in initial plot
+# Debt ratio ->  shows no difference in initial plot
+# NumberOfTime30-59DaysPastDueNotWorse -> slight over-population at higher end? Could the large values here be a default code and not a number? 
+# RevolvingUtilizationOfUnsecuredLines -> No obvious difference 
+
+# Depending on the client's request, it may be of interest to carry out tests to understand if there are significant differences being defaults and non-defaults for the above variables e.g. Mann-Whitney-Wilcox test with effect size calculation to handle large sample size. 
+
+
+# Feature Engineering -----------------------------------------------------
+
+# There are many NAs in MonthlyIncome, but none in DebtRatio
+# We work test the assumption that DebtRatio is some combination of Debt and Income. I would ask the client about this and any other unclear columns.
+
+# Visual inspection shows that DebtRatios for unclients with MonthlyIncome=NA are strangely high. 
+
+df.training[is.na(df.training$MonthlyIncome),] %>% View()
+
+df.training$NA_MonthlyIncome <- as.integer(is.na(df.training$MonthlyIncome)) %>% as.factor()
+
+ggplot(data=df.training, aes(x=NA_MonthlyIncome,y=DebtRatio)) + geom_boxplot()
+
+# Bin age and calculate mean defaults per bin
+df.training$EF_AgeGroup<- cut(df.training$age, right=FALSE, seq(0,110,by = 10),labels=seq(0,10))
+
+df.training$EF_NumericDefault<- df.training$SeriousDlqin2yrs %>% as.character() %>% as.numeric()
+
+
+df.training<- df.training %>% group_by(EF_AgeGroup) %>% mutate(EF_Mean_DefaultPerAge=mean(EF_NumericDefault)) 
+
+# Cross-check mutate calculation
+df.DefaultPerAge<- df.training %>% group_by(EF_AgeGroup) %>% summarise(EF_Mean_DefaultPerAge=mean(EF_NumericDefault)) 

@@ -19,3 +19,10 @@ propNAs<- function(x){
   return(y/nr)
   
 }
+
+numOutliers<- function(x){
+  
+  tmp.stats<- boxplot.stats(x)
+  y<- tmp.stats$out %>% length() %>% unname()
+  return(y)
+}
