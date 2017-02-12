@@ -7,7 +7,7 @@
 # # Required packages (Uncomment to install)
 # install.packages("tidyverse")
 # install.packages("ReporteRs")
-
+# install.packages("stringr")
 
 # Description -------------------------------------------------------------
 
@@ -23,6 +23,7 @@ source("Code/etl_functions.R")
 
 library(tidyverse)
 library(ReporteRs)
+library(stringr)
 
 
 # Load data ---------------------------------------------------------------
@@ -39,6 +40,11 @@ sapply(df.training,class)
 
 # Summary
 summary(df.training)
+
+# The - signs in column names can be inconvenient  - clean out. 
+colnames(df.training) <- gsub("-", "_", colnames(df.training))
+
+
 
 # Further column information
 df.description<- data.frame("ColName"=names(df.training),"ColType"= {sapply(df.training,class) %>% unname()},"NumUnique"={sapply(df.training,numUnique)%>% unname()}, "NAs"= {sapply(df.training,numNAs) %>% unname()},"PropNAs"= {sapply(df.training,propNAs) %>% unname()},"NumOutliers"= {sapply(df.training,numOutliers)})
@@ -96,26 +102,135 @@ for(i in colnames(df.training)[-1]){
 # Depending on the client's request, it may be of interest to carry out tests to understand if there are significant differences being defaults and non-defaults for the above variables e.g. Mann-Whitney-Wilcox test with effect size calculation to handle large sample size. 
 
 
+# Explore unusual large values in Numbers of Times Late
+
+table(df.training$NumberOfTime30_59DaysPastDueNotWorse)
+table(df.training$NumberOfTimes90DaysLate)
+table(df.training$NumberOfTime60_89DaysPastDueNotWorse)
+
+# Check other quantities
+
+table(df.training$NumberOfOpenCreditLinesAndLoans) # no gap or large number is entries in unusual value - no reason to believe there is a code
+table(df.training$NumberRealEstateLoansOrLines) # no large number is entries in unusual value - no reason to believe there is a code
+table(df.training$NumberOfDependents) # no large number is entries in unusual value - no reason to believe there is a code
+
+# All show 96 and 98, which suggests that these are codes, e.g. unknown. Discuss this with client 
+
 # Feature Engineering -----------------------------------------------------
 
+# Feature Engineering : Debt -----------------------------------------------------
+
 # There are many NAs in MonthlyIncome, but none in DebtRatio
-# We work test the assumption that DebtRatio is some combination of Debt and Income. I would ask the client about this and any other unclear columns.
+# Data dictionary: Debt Ratio = Debt/Income. 
+
 
 # Visual inspection shows that DebtRatios for unclients with MonthlyIncome=NA are strangely high. 
-
 df.training[is.na(df.training$MonthlyIncome),] %>% View()
-
 df.training$NA_MonthlyIncome <- as.integer(is.na(df.training$MonthlyIncome)) %>% as.factor()
-
 ggplot(data=df.training, aes(x=NA_MonthlyIncome,y=DebtRatio)) + geom_boxplot()
+
+
+df.training<- df.training %>%  dplyr::mutate(EF_MonthlyDebt = DebtRatio*MonthlyIncome)  
+
+
+
+# Working assumption based on order of magnitude of DebtRatios, to be discussed with client, Monthly Income NAs -> 1 for DebtRatio calculation
+
+tmp.MI_NAs<- is.na(df.training$EF_MonthlyDebt)
+df.training$EF_MonthlyDebt[tmp.MI_NAs]=df.training$DebtRatio[tmp.MI_NAs]
+
+summary(df.training$EF_MonthlyDebt)
+
+# Manual binning based on boxplot. Another option would be to maximize differences in default rate between, bins using library(smbinning) 
+boxplot(df.training$EF_MonthlyDebt)
+
+
+# Bin age and calculate mean defaults per bin
+tmp.stats<- boxplot.stats(df.training$EF_MonthlyDebt)
+df.training$EF_DebtGroup<- cut(df.training$EF_MonthlyDebt, right=FALSE, breaks = c(tmp.stats$stats,max(df.training$EF_MonthlyDebt)+1),labels = c(1:5)) %>% as.numeric()
+rm(tmp.stats)
+
+# Recast 0 debt clients in own group 0
+df.training$EF_DebtGroup[df.training$EF_MonthlyDebt==0]=0
+
+# Recast as factor
+df.training$EF_DebtGroup<- as.factor(df.training$EF_DebtGroup)
+
+# Calculate mean default per debt group 
+df.training<- df.training %>% group_by(EF_DebtGroup) %>% mutate(EF_Mean_DefaultDebtGroup=mean(EF_NumericDefault)) 
+
+# Plot mean default per debt group 
+df.DefaultPerDebtGroup<- df.training %>% group_by(EF_DebtGroup) %>% summarise(EF_Mean_DefaultDebtGroup=mean(EF_NumericDefault)) 
+ggplot(data=df.DefaultPerDebtGroup, aes(x=EF_DebtGroup,y= EF_Mean_DefaultDebtGroup)) + geom_point() +theme_bw()
+
+
+# Feature Engineering: Age -----------------------------------------------------
 
 # Bin age and calculate mean defaults per bin
 df.training$EF_AgeGroup<- cut(df.training$age, right=FALSE, seq(0,110,by = 10),labels=seq(0,10))
-
 df.training$EF_NumericDefault<- df.training$SeriousDlqin2yrs %>% as.character() %>% as.numeric()
-
-
 df.training<- df.training %>% group_by(EF_AgeGroup) %>% mutate(EF_Mean_DefaultPerAge=mean(EF_NumericDefault)) 
 
 # Cross-check mutate calculation
 df.DefaultPerAge<- df.training %>% group_by(EF_AgeGroup) %>% summarise(EF_Mean_DefaultPerAge=mean(EF_NumericDefault)) 
+
+# Plot  - we see low default rate in low and high age range. 
+ggplot(data=df.DefaultPerAge, aes(x=EF_AgeGroup,y= EF_Mean_DefaultPerAge)) + geom_point() +theme_bw()
+
+# Data quality issue - ages 0-10?
+
+# Feature Engineering: Total Days Late -----------------------------------------------------
+
+# I believe it should be interesting to look at the total number of times that a client was late
+
+# First clean out codes: 
+
+# Inspection shows a client has the same code across all coulms. If correct, we should only see -3 or -6 in new column
+df.training$NumberOfTime30_59DaysPastDueNotWorse[df.training$NumberOfTime30_59DaysPastDueNotWorse==96]=-1
+df.training$NumberOfTime60_89DaysPastDueNotWorse[df.training$NumberOfTime60_89DaysPastDueNotWorse==96]=-1
+df.training$NumberOfTimes90DaysLate[df.training$NumberOfTimes90DaysLate==96]=-1
+
+df.training$NumberOfTime30_59DaysPastDueNotWorse[df.training$NumberOfTime30_59DaysPastDueNotWorse==98]=-2
+df.training$NumberOfTime60_89DaysPastDueNotWorse[df.training$NumberOfTime60_89DaysPastDueNotWorse==98]=-2
+df.training$NumberOfTimes90DaysLate[df.training$NumberOfTimes90DaysLate==98]=-2
+
+df.training<- df.training %>% mutate( EF_Total_Num_Times_Late = NumberOfTime30_59DaysPastDueNotWorse + NumberOfTime60_89DaysPastDueNotWorse + NumberOfTimes90DaysLate)
+
+# Check 
+table(df.training$EF_Total_Num_Times_Late) # Indeed - only all 96 or all 98
+
+df.DefaultPerTimesLate<- df.training %>% group_by(EF_Total_Num_Times_Late) %>% summarise(EF_Mean_Default=mean(EF_NumericDefault)) 
+
+# We see a reasoanable linear relationship between the number of times late and the mean number of defaults and the number of times late
+ggplot(data=df.DefaultPerTimesLate, aes(x= EF_Total_Num_Times_Late ,y= EF_Mean_Default)) + geom_point() +theme_bw()
+
+# Feature Engineering: Debt Per Dependents -----------------------------------------------------
+
+# Note it makes more sense to take a product, rather than a ratio, otherwise large debt and large number of dependents could be the same as small debt and fewer dependents.
+
+# We assume that NumberOfDependents=NA -> 0: check with client
+
+df.training$EF_NumberOfDependents_Cleaned<- df.training$NumberOfDependents
+df.training$EF_NumberOfDependents_Cleaned[is.na(df.training$EF_NumberOfDependents_Cleaned)]=0
+
+# More Dependents or More Debt - larger value
+df.training<- df.training %>% mutate(EF_DebtPerDependents = EF_MonthlyDebt*(EF_NumberOfDependents_Cleaned+1))
+
+summary(df.training$EF_DebtPerDependents)
+
+tmp.stats<- boxplot.stats(df.training$EF_DebtPerDependents)
+df.training$EF_DebtPerDependenetsGroup<- cut(df.training$EF_DebtPerDependents, right=FALSE, breaks = c(tmp.stats$stats,max(df.training$EF_DebtPerDependents)+1),labels = c(1:5)) %>% as.numeric()
+rm(tmp.stats)
+
+# Recast 0 debt clients in own group 0
+df.training$EF_DebtPerDependenetsGroup[df.training$EF_DebtPerDependenetsGroup==0]=0
+
+# Recast as factor
+df.training$EF_DebtPerDependenetsGroup<- as.factor(df.training$EF_DebtPerDependenetsGroup)
+
+# Calculate mean default per debt group 
+df.training<- df.training %>% group_by(EF_DebtPerDependenetsGroup) %>% mutate(EF_Mean_DefaultDebtPerDepedentGroup=mean(EF_NumericDefault)) 
+
+# Plot mean default per debt group 
+df.DebtPerDependenetsGroup<- df.training %>% group_by(EF_DebtPerDependenetsGroup) %>% summarise(EF_Mean_DefaultDebtPerDepedentGroup=mean(EF_NumericDefault)) 
+ggplot(data=df.DebtPerDependenetsGroup, aes(x=EF_DebtPerDependenetsGroup,y= EF_Mean_DefaultDebtPerDepedentGroup)) + geom_point() +theme_bw()
