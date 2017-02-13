@@ -12,7 +12,7 @@
 # Description -------------------------------------------------------------
 
 # This scripts loads, cleans and explores the raw dataset cs-training.csv downloaded from Kaggle
-# It creates a cleaned dataset stored in Data/data_credit_cleaned.csv, which is then used in the feature engineering script 02_Feature_Engineering.R
+# It creates a cleaned dataset stored in Data/data_credit_cleaned.Rda, which is then used in the feature engineering script 02_Feature_Engineering.R
 
 
 # Clear memory
@@ -110,4 +110,4 @@ table(df.credit$NumberOfDependents) # no large number is entries in unusual valu
 
 # All show 96 and 98, which suggests that these are codes, e.g. unknown. Discuss this with client 
 
-write.csv(df.credit,"Data/data_credit_cleaned.csv")
+save(df.credit,file="Data/data_credit_cleaned.Rda")
